@@ -1,0 +1,16 @@
+# Clone do Free My TV original: as mudanças estão em free-my-tv-byintek.patch (veja o README)
+free-my-tv/
+
+# Segredos: nunca vão para o GitHub
+*.keystore
+*.idsig
+config.properties
+client_secret*.json
+token.json
+
+# Lixo de build
+build.log
+out/
+
+# Meus arquivos reais (APK com a minha cidade, config do projetor): ficam só neste PC
+privado/

@@ -1,0 +1,6 @@
+# Linux line endings everywhere: the patch, install.sh and ytfeed.py break with CRLF
+* text=auto eol=lf
+*.patch -text
+*.apk binary
+*.png binary
+*.webp binary

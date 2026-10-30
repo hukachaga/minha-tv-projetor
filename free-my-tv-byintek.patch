@@ -1,0 +1,608 @@
+diff --git a/app/AndroidManifest.xml b/app/AndroidManifest.xml
+index af90a97..ec739dc 100644
+--- a/app/AndroidManifest.xml
++++ b/app/AndroidManifest.xml
+@@ -96,7 +96,8 @@
+         android:icon="@drawable/icon"
+         android:banner="@drawable/banner"
+         android:allowBackup="false"
+-        android:usesCleartextTraffic="false">
++        android:usesCleartextTraffic="false"
++        android:networkSecurityConfig="@xml/network_security_config">
+ 
+         <!-- The app's icon opens the settings (switch between Free My TV and the original home screen). -->
+         <activity
+diff --git a/app/res/xml/network_security_config.xml b/app/res/xml/network_security_config.xml
+new file mode 100644
+index 0000000..a57c0c4
+--- /dev/null
++++ b/app/res/xml/network_security_config.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Only HTTPS, except the YouTube feed on the home server's LXC (plain HTTP on the local network). -->
++<network-security-config>
++    <base-config cleartextTrafficPermitted="false" />
++    <domain-config cleartextTrafficPermitted="true">
++        <domain includeSubdomains="false">192.168.0.10</domain>
++    </domain-config>
++</network-security-config>
+diff --git a/app/src/io/freemytv/Backdrop.java b/app/src/io/freemytv/Backdrop.java
+index 7f0b3c8..864fc14 100644
+--- a/app/src/io/freemytv/Backdrop.java
++++ b/app/src/io/freemytv/Backdrop.java
+@@ -100,10 +100,13 @@ final class Backdrop {
+             int[] night = darken(frost.clone(), 0.76f);
+             int[] nightGlass = darken(glass, 0.56f);
+             if (own) {
+-                int[] sharp = reduce(out, GW, GH, 1, 1);
+-                int[] lightBg = ramp(sharp.clone(), 0.82f, 0.45f, true), nightBg = ramp(sharp, 0.76f, 0.5f, false);
++                // Byintek: the photo at the screen's full size, unblurred; the clock moved to the top right, small, so
++                // it is barely darkened at night.
++                int[] sharp = new int[W * H];
++                out.getPixels(sharp, 0, W, 0, 0, W, H);
++                int[] lightBg = ramp(sharp.clone(), W, H, 0.82f, 0.45f, true), nightBg = ramp(sharp, W, H, 0.22f, 0.22f, false);
+                 out.recycle();
+-                return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, GW, GH);
++                return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, W, H);
+             }
+             out.recycle();
+             return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass);
+@@ -216,15 +219,15 @@ final class Backdrop {
+         return px;
+     }
+ 
+-    /** Whitens (or darkens) by `left` up to 45% of the width, easing to `right` by 70% (a GW × GH image). */
+-    private static int[] ramp(int[] px, float left, float right, boolean light) {
+-        int[] col = new int[GH];
+-        for (int x = 0; x < GW; x++) {
+-            float t = Math.max(0, Math.min(1, (x / (float) GW - 0.45f) / 0.25f));
++    /** Whitens (or darkens) by `left` up to 45% of the width, easing to `right` by 70% (a w × h image). */
++    private static int[] ramp(int[] px, int w, int h, float left, float right, boolean light) {
++        int[] col = new int[h];
++        for (int x = 0; x < w; x++) {
++            float t = Math.max(0, Math.min(1, (x / (float) w - 0.45f) / 0.25f));
+             float a = left + (right - left) * t * t * (3 - 2 * t);
+-            for (int y = 0; y < GH; y++) col[y] = px[y * GW + x];
++            for (int y = 0; y < h; y++) col[y] = px[y * w + x];
+             if (light) whiten(col, a); else darken(col, a);
+-            for (int y = 0; y < GH; y++) px[y * GW + x] = col[y];
++            for (int y = 0; y < h; y++) px[y * w + x] = col[y];
+         }
+         return px;
+     }
+diff --git a/app/src/io/freemytv/HomeApps.java b/app/src/io/freemytv/HomeApps.java
+index ec4197c..2ac5730 100644
+--- a/app/src/io/freemytv/HomeApps.java
++++ b/app/src/io/freemytv/HomeApps.java
+@@ -89,26 +89,22 @@ final class HomeApps {
+      * art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
+      */
+     private static final String[][] SHELF = {
+-        {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
+         {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
+         {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
++        {"crunchyroll", "Crunchyroll", "com.crunchyroll.crunchyroid", "F47521", "", "1"},
+         {"prime", "Prime Video", "com.amazon.amazonvideo.livingroom", "1A98FF", "tint", "0.96"},
+         {"prime", "Prime Video", "com.amazon.firebat", "1A98FF", "tint", "0.96"},
+         {"prime", "Prime Video", "com.amazon.avod", "1A98FF", "tint", "0.96"},
+-        {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
+-        {"max", "Max", "com.wbd.stream", "6C3BE0", "", "1.32"},
+-        {"max", "HBO Max", "com.hbo.hbonow", "6C3BE0", "", "1.32"},
++        {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
++        {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
+         {"appletv", "Apple TV", "com.apple.atve.androidtv.appletv", "B8BCC6", "", "1.1"},
+         {"appletv", "Apple TV", "com.apple.atve.sony.appletv", "B8BCC6", "", "1.1"},   // Sony's own build
+         {"appletv", "Apple TV", "com.apple.atve.amazon.appletv", "B8BCC6", "", "1.1"},
+         {"hulu", "Hulu", "com.hulu.livingroomplus", "1CE783", "", "1"},
+         {"hulu", "Hulu", "com.hulu.plus", "1CE783", "", "1"},
+-        {"paramount", "Paramount+", "com.cbs.ott", "0064FF", "", "1"},
+-        {"paramount", "Paramount+", "com.cbs.ca", "0064FF", "", "1"},          // Paramount+ outside the US (a Sony in the UK; Canada)
+         {"now", "NOW", "com.bskyb.nowtv.beta", "1B9C8E", "", "1"},              // UK: Sky's NOW
+         {"peacock", "Peacock", "com.peacocktv.peacockandroid", "6E55DC", "", "1"},
+         {"peacock", "Peacock", "com.peacock.peacockfiretv", "6E55DC", "", "1"},
+-        {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
+         {"kinopoisk", "Кинопоиск", "ru.kinopoisk.tv", "FF5500", "white", "1"},
+         {"okko", "Okko", "ru.more.play", "6D43FF", "", "1"},
+         {"premier", "Premier", "gpm.tnt_premier", "FF2D55", "", "1"},
+diff --git a/app/src/io/freemytv/HomeMode.java b/app/src/io/freemytv/HomeMode.java
+index 0eb5696..e908f86 100644
+--- a/app/src/io/freemytv/HomeMode.java
++++ b/app/src/io/freemytv/HomeMode.java
+@@ -167,6 +167,10 @@ final class HomeMode {
+         "com.droidlogic.ble", "com.droidlogic.overlay", "com.mft.rcupair", "com.mtf.blereconnect", "com.mtf.customization",
+         "com.mtf.tvsettingadapt", "com.sdt.projector.observer", "com.skyworth.superservice", "com.skyworth.smallclient",
+         "com.oemservice", "com.oem.qa", "com.mft.producttest", "android.autoinstalls.config.AMLSTBAndroid.device",
++        // Byintek U90 Max's Google TV module (Skyworth "4K Google TV Stick", Amlogic, Google TV 14): remote keys,
++        // customization, OTA and upgrades, device info, factory test, front LED, Amlogic voice subtitles
++        "com.sdt.globalkey", "com.sdt.globalkey.overlay", "com.sdt.customization", "com.sdt.ota", "com.sdt.upgrade",
++        "com.sdt.deviceinfo", "com.sdt.producttest", "com.mft.frontpanelledsservice", "com.amlogic.voicesubtitle",
+         // HY300 projectors (Hotack, Allwinner H713; Amlogic txhd2): keystone and projection settings, the HDMI player,
+         // Miracast receiver
+         "com.htc.htcsettings", "com.softwinner.awlivetv", "com.softwinner.miracastReceiver", "com.softwinner.tcorrection",
+diff --git a/app/src/io/freemytv/HomeView.java b/app/src/io/freemytv/HomeView.java
+index ff6ff09..5479d3f 100644
+--- a/app/src/io/freemytv/HomeView.java
++++ b/app/src/io/freemytv/HomeView.java
+@@ -76,6 +76,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+     private static final float TILE_RADIUS = 22;
+     // Tile focus (Apple TV style): it grows from the center and its shadow drops (it "rises" toward the viewer).
+     private static final float FOCUS_GROW = 0.2f;
++    // Focus ring (seen from across the room on a projector): its gap from the tile and its two strokes' widths.
++    private static final float RING_GAP = 7, RING_W = 5, RING_EDGE = 2;
+     // Corner capsule.
+     // Corner capsule: the height and top offset of the tvOS tab bar (68 and 46).
+     private static final float CAPSULE_TOP = 46, CAPSULE_H = 68, BUTTON = 56;
+@@ -97,7 +99,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+     private static final float L_TITLE_BASE = 130, L_TABBAR_TOP = 158, L_TABBAR_H = 68, L_CARDS_TOP = 262, L_CARD_H = 442;
+     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
+     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
+-    private static final float L_DATE_BASE = 330, L_CLOCK_BASE = 540, L_WEATHER_BASE = 626, L_QUOTES_BASE = 694;
++    // Byintek: the clock block sits small at the top right, under the round buttons (and the focused one's name), so
++    // the photo behind it shows.
++    // Byintek: the YouTube row (Videos) above the shelf: its top, a card's size, the gap and how many show at once.
++    private static final float V_TOP = 520, V_W = 320, V_H = 180, V_GAP = 34;
++    private static final int V_VISIBLE = 5;
++    private static final float L_DATE_BASE = 240, L_CLOCK_BASE = 342, L_WEATHER_BASE = 396, L_QUOTES_BASE = 694;
+     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
+     private static String[] tabs;
+     private static int tabsGeneration = -1;
+@@ -145,16 +152,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
+     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
+     private final RectF[] topRects = new RectF[3 + HomeApps.MAX_TOP];
+-    private final Spring[] cardFocus = new Spring[Recs.MAX_CARDS];
++    private final Spring[] cardFocus = new Spring[ROW];
+     /** How open (wide) each card is: 1 for the one at cardIndex, 0 for the others; the widths always add up to the same. */
+-    private final Spring[] cardOpen = new Spring[Recs.MAX_CARDS];
++    private final Spring[] cardOpen = new Spring[ROW];
+     /** Picks per tab (Prefs.cards()), read when the cards update, not on every frame. */
+     private int cardSlots = 3;
+     /** The row scrolls in whole cards: the focused one stays among the first three. */
+     private final Spring cardScroll = new Spring(0.32f, 0.78f, 0);
+-    private final RectF[] cardRects = new RectF[Recs.MAX_CARDS];
++    private final RectF[] cardRects = new RectF[ROW];
++    /** The card row holds the picks (TMDB) or, without them, the YouTube videos (Videos). */
++    private static final int ROW = Math.max(Recs.MAX_CARDS, Videos.MAX);
++    private final Videos videos = new Videos(() -> {
++        wake();
++        updatePicks();
++    });
+     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
+     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
++    private Paint lVideo, lVideoMeta;
+     private Shader lightGradient;
+ 
+     // Shelf
+@@ -269,6 +283,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+     private final Paint imageFill = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+     private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+     private final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG);
++    private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+     private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
+     private final Paint veil = new Paint(Paint.ANTI_ALIAS_FLAG);
+     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+@@ -362,6 +377,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             playing.start();   // the listener allowed after the screen showed (a no-op once watching)
+             data.refreshIfStale();
+             recs.refreshIfStale();
++            videos.refreshIfStale();
+             checkNotices();
+             updatePalette();
+             checkNight(true);
+@@ -407,7 +423,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             topFocus[i] = new Spring(0.26f, 0.85f, 0);
+             topRects[i] = new RectF();
+         }
+-        for (int i = 0; i < Recs.MAX_CARDS; i++) {
++        for (int i = 0; i < ROW; i++) {
+             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
+             cardOpen[i] = new Spring(0.32f, 0.78f, i == 0 ? 1 : 0);
+             cardRects[i] = new RectF();
+@@ -447,6 +463,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         recs.addListener(this);
+         data.refreshIfStale();
+         recs.refreshIfStale();
++        videos.refreshIfStale();
+         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
+         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
+         handler.postDelayed(tick, 15_000);
+@@ -642,10 +659,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         lQuote = Ui.numbers(Ui.regular, 21 * k, L_FAINT);
+         lTip = Ui.text(Ui.semibold, 25 * k, L_INK);
+         lTip.setTextAlign(Paint.Align.CENTER);
+-        lDate = Ui.text(Ui.semibold, 34 * k, L_DIM);
+-        lClock = Ui.numbers(Ui.light, 200 * k, L_INK);
++        lDate = Ui.text(Ui.semibold, 26 * k, L_DIM);
++        lClock = Ui.numbers(Ui.light, 104 * k, L_INK);
+         lClock.setLetterSpacing(-0.01f);
+-        lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
++        lWeather = Ui.text(Ui.medium, 26 * k, L_DIM);
++        // A soft shadow keeps the small text readable over a brighter photo.
++        lVideo = Ui.text(Ui.semibold, 22 * k, L_INK);
++        lVideoMeta = Ui.text(Ui.medium, 19 * k, L_DIM);
++        for (Paint p : new Paint[] {lDate, lClock, lWeather, lVideo, lVideoMeta}) p.setShadowLayer(8 * k, 0, 2 * k, 0x99000000);
+         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
+         lightGradient = null;
+         buttonPaint = Ui.text(Ui.semibold, 29 * k, INK);
+@@ -690,6 +711,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         border.setStrokeWidth(2 * k);
+         rim.setStyle(Paint.Style.STROKE);
+         rim.setStrokeWidth(2.5f * k);
++        ring.setStyle(Paint.Style.STROKE);
+         onPlaying();   // the line fits the new size; a title that came before the first layout bounces and is said now
+     }
+ 
+@@ -1545,6 +1567,25 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         } else {
+             if (it.tile != null) roundImage(c, it.tile, it.tileShader, cell, r);
+         }
++        drawRing(c, cell, r, fc);
++    }
++
++    /**
++     * A white ring around the focused `cell`, with a thin dark edge outside it so it shows on a light sky, a dark one
++     * or a photo alike. Fades in with the focus `f`.
++     */
++    private void drawRing(Canvas c, RectF cell, float r, float f) {
++        if (f < 0.01f) return;
++        float g = RING_GAP * k, w = RING_W * k, e = RING_EDGE * k;
++        float out = g + w / 2;
++        tmp.set(cell.left - out, cell.top - out, cell.right + out, cell.bottom + out);
++        ring.setShader(null);
++        ring.setStrokeWidth(w + 2 * e);
++        ring.setColor(Ui.alpha(0xFF000000, 0.45f * f));
++        c.drawRoundRect(tmp, r + out, r + out, ring);
++        ring.setStrokeWidth(w);
++        ring.setColor(Ui.alpha(0xFFFFFFFF, f));
++        c.drawRoundRect(tmp, r + out, r + out, ring);
+     }
+ 
+     /**
+@@ -2116,6 +2157,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             c.drawRoundRect(cell, r, r, rim);
+             rim.setStrokeWidth(2.5f * k);
+         }
++        drawRing(c, cell, r, fc);
+     }
+ 
+     // MARK: - Toasts
+@@ -2459,7 +2501,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         } else if (zone == Z_HERO) {
+             Recs.Pick p = currentPick();
+             if (p == null || p.pkg == null) return;
+-            it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
++            it = HomeApps.app(p.pkg, p.thumb != null ? "YouTube" : Recs.serviceName(p), p.link);
+             r = heroButton;
+         } else if (zone == Z_STATUS) {
+             if (statusItems.isEmpty()) return;
+@@ -2479,7 +2521,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         } else if (zone == Z_CARDS) {
+             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
+             if (p == null || p.pkg == null) return;
+-            it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
++            it = HomeApps.app(p.pkg, p.thumb != null ? "YouTube" : Recs.serviceName(p), p.link);
+             r = cardRects[cardIndex];
+         } else {
+             if (shelf.isEmpty()) return;
+@@ -2759,7 +2801,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             return;
+         }
+         for (int i = picksOn() ? 0 : 3; i < 3 + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
+-        for (int i = 0; i < Math.min(Recs.MAX_CARDS, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
++        for (int i = 0; i < Math.min(ROW, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+         for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
+         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
+         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
+@@ -2811,7 +2853,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+                 dy = (i < 3 ? heroLayer : status).getTranslationY();
+                 break;
+             case Z_CARDS:
+-                if (i >= Math.min(Recs.MAX_CARDS, cards.size())) return false;
++                if (i >= Math.min(ROW, cards.size())) return false;
+                 a11yRect.set(cardRects[i]);
+                 dy = heroLayer.getTranslationY();
+                 break;
+@@ -3017,7 +3059,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
+     private void updateCards() {
+         cardSlots = Prefs.cards();
+-        List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
++        List<Recs.Pick> list = picksOn() ? recs.now(TAB_KIND[tab]) : videos.now();
+         if (!samePicks(list, cards)) {
+             cards = list;
+             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
+@@ -3026,8 +3068,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         }
+         // This tab's cards, then the first three of the others (what shows at first): switching tabs is quick, and
+         // the images stay under Recs's cap in memory.
+-        for (Recs.Pick p : list) recs.backdrop(p);
+-        for (int t = 0; t < TAB_KIND.length; t++) {
++        if (picksOn()) for (Recs.Pick p : list) recs.backdrop(p);
++        for (int t = 0; picksOn() && t < TAB_KIND.length; t++) {
+             if (t == tab) continue;
+             List<Recs.Pick> other = recs.now(TAB_KIND[t]);
+             for (int i = 0; i < Math.min(3, other.size()); i++) recs.backdrop(other.get(i));
+@@ -3095,6 +3137,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         applyTone();
+         if (!picksOn()) {
+             drawClock(c);
++            if (!cards.isEmpty()) drawVideos(c);
+             if (HomeData.coinCount() > 0 || playingTab != null) drawQuotes(c);
+             return;
+         }
+@@ -3133,14 +3176,61 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+         if (HomeData.coinCount() > 0 || playingTab != null) drawQuotes(c);
+     }
+ 
++    /**
++     * Byintek: the YouTube videos (Videos) as a row of small 16:9 cards above the shelf, 5 at a time, scrolling with
++     * the focus; the focused one grows a little and gets the focus ring. Under each, its title; under the focused one,
++     * also the channel and the length.
++     */
++    private void drawVideos(Canvas c) {
++        float top = V_TOP * k, vw = V_W * k, vh = V_H * k, g = V_GAP * k, r0 = 14 * k;
++        float scroll = Math.min(cardScroll.value, Math.max(0, cards.size() - V_VISIBLE));
++        float x = MARGIN * k - scroll * (vw + g);
++        int n = Math.min(cards.size(), cardRects.length);
++        for (int i = 0; i < n; i++, x += vw + g) cardRects[i].set(x, top, x + vw, top + vh);
++        int focused = -1;
++        for (int i = 0; i < n; i++) if (cardFocus[i].value > 0.02f && (focused < 0 || cardFocus[i].value > cardFocus[focused].value)) focused = i;
++        for (int i = 0; i < n; i++) if (i != focused) drawVideo(c, i, r0);
++        if (focused >= 0) drawVideo(c, focused, r0);
++    }
++
++    private void drawVideo(Canvas c, int i, float r0) {
++        RectF base = cardRects[i];
++        if (base.right < 0 || base.left > getWidth()) return;
++        Recs.Pick p = cards.get(i);
++        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.08f * v;
++        float bw = base.width(), bh = base.height(), cx = base.centerX(), cy = base.centerY();
++        cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
++        float r = r0 * s;
++        tmp.set(cell);
++        tmp.offset(0, (8 + 10 * f) * k);
++        shadowDeep.setColor(Ui.alpha(0xFF000000, 0.35f + 0.25f * f));
++        shadows.draw(c, tmp, r, DEEP_BLUR * k, shadowDeep);
++        if (p.thumb != null) coverImage(c, p.thumb, p.thumbShader, cell, r, 1);
++        if (f < 0.99f) {   // the others a little dimmer, so the focused one stands out
++            veil.setColor(Ui.alpha(0xFF000000, 0.25f * (1 - f)));
++            c.drawRoundRect(cell, r, r, veil);
++        }
++        drawRing(c, cell, r, f);
++        lVideo.setColor(blend(0xB3FFFFFF, 0xFFFFFFFF, f));
++        fitPaint.set(lVideo);
++        c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left,
++                base.bottom + 40 * k, lVideo);
++        if (f > 0.02f && p.meta != null) {
++            lVideoMeta.setColor(Ui.alpha(0xFFFFFFFF, 0.75f * f));
++            fitPaint.set(lVideoMeta);
++            c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left,
++                    base.bottom + 68 * k, lVideoMeta);
++        }
++    }
++
+     private boolean picksOn() {
+         return Recs.hasKey(getContext());
+     }
+ 
+     private void drawClock(Canvas c) {
+-        float x = MARGIN * k;
+-        c.drawText(dateText, x - Ui.leftBearing(lDate, dateText), L_DATE_BASE * k, lDate);
+-        c.drawText(clockText, x - Ui.leftBearing(lClock, clockText), L_CLOCK_BASE * k, lClock);
++        float right = CONTENT_R * k;
++        c.drawText(dateText, right - lDate.measureText(dateText), L_DATE_BASE * k, lDate);
++        c.drawText(clockText, right - lClock.measureText(clockText), L_CLOCK_BASE * k, lClock);
+         HomeData.Weather wx = data.weather;
+         if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
+         if (data.weatherAt != weatherLineAt || Prefs.version != weatherLinePrefs || !Ui.language.equals(weatherLineLanguage)) {
+@@ -3150,11 +3240,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             weatherLine = HomeData.degrees(wx.temp) + "  " + HomeData.condition(wx.code, wx.isDay) + "   "
+                     + HomeData.highLow(wx, "  ");
+         }
+-        float size = 40 * k, base = L_WEATHER_BASE * k;
++        float size = 30 * k, base = L_WEATHER_BASE * k;
+         String symbol = Symbols.weather(wx.code, wx.isDay);
+         float sw = Symbols.width(getContext(), symbol, size);
++        float x = right - lWeather.measureText(weatherLine) - sw - 12 * k;
+         Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
+-        c.drawText(weatherLine, x + sw + 16 * k, base, lWeather);
++        c.drawText(weatherLine, x + sw + 12 * k, base, lWeather);
+     }
+ 
+     /**
+@@ -3223,6 +3314,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+             rim.setAlpha(255);
+             c.restore();
+         }
++        drawRing(c, cell, r, f);
+         // The cards peeking in at the sides show only their image: their text would start off screen.
+         if (p == null || base.left < 0 || base.left > (CONTENT_R - 100) * k) return;
+         fitPaint.set(lCardTitle);
+@@ -3295,8 +3387,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
+                     if (next == cardIndex) return true;
+                     cardIndex = next;
+                 } else if (dy < 0) {
++                    if (!picksOn() && lightButtons.isEmpty()) return true;   // the videos: no tabs above
+                     zone = Z_TOP;
+-                    topIndex = tab;     // as on Apple TV: moving up to the tabs focuses the selected tab
++                    topIndex = picksOn() ? tab : 3;     // as on Apple TV: moving up to the tabs focuses the selected tab
+                 } else {
+                     zone = Z_SHELF;
+                     if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, cardRects[cardIndex].centerX());
+diff --git a/app/src/io/freemytv/Recs.java b/app/src/io/freemytv/Recs.java
+index 3ff4ba0..3653b7d 100644
+--- a/app/src/io/freemytv/Recs.java
++++ b/app/src/io/freemytv/Recs.java
+@@ -54,6 +54,8 @@ final class Recs {
+         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
+         boolean detailed;
+         java.io.File photo;     // one of your own photos (Photos): no title, no caption
++        android.graphics.Bitmap thumb;                 // a YouTube video's thumbnail (Videos), at the row's size
++        android.graphics.BitmapShader thumbShader;     // its shader, for the rounded corners
+     }
+ 
+     interface Listener { void onRecs(); }
+diff --git a/app/src/io/freemytv/Videos.java b/app/src/io/freemytv/Videos.java
+new file mode 100644
+index 0000000..2077809
+--- /dev/null
++++ b/app/src/io/freemytv/Videos.java
+@@ -0,0 +1,135 @@
++package io.freemytv;
++
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
++import android.graphics.BitmapShader;
++import android.graphics.Shader;
++import android.os.Handler;
++import android.os.Looper;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.URL;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++
++/**
++ * Byintek: the row of new videos from your YouTube subscriptions, above the shelf. The list (no Shorts, no lives,
++ * newest first) comes from the ytfeed LXC (`youtube_feed` in config.properties); each video
++ * opens in YouTube. Fetched in the background at most every 5 minutes; the thumbnails are kept at the row's size.
++ */
++final class Videos {
++    static final int MAX = 30;
++    /** Thumbnails at the focused card's size (16:9), so they draw pixel for pixel. */
++    static final int THUMB_W = 352, THUMB_H = 198;
++    private static final long EVERY = 5 * 60_000L;   // the LXC refreshes every 5 minutes too
++    private static final String YOUTUBE = "com.google.android.youtube.tv";
++
++    private final Handler main = new Handler(Looper.getMainLooper());
++    private final Runnable changed;
++    private volatile List<Recs.Pick> list = Collections.emptyList();
++    private final Map<String, Recs.Pick> byId = new HashMap<>();   // keeps thumbnails across refreshes
++    private long fetchedAt;
++    private boolean fetching;
++
++    Videos(Runnable changed) {
++        this.changed = changed;
++    }
++
++    static boolean on() {
++        return !Config.YOUTUBE_FEED.isEmpty();
++    }
++
++    /** The videos with their thumbnail ready, in the feed's order. */
++    List<Recs.Pick> now() {
++        return list;
++    }
++
++    void refreshIfStale() {
++        if (!on() || fetching || System.currentTimeMillis() - fetchedAt < EVERY) return;
++        fetching = true;
++        new Thread(this::fetch, "videos").start();
++    }
++
++    private void fetch() {
++        try {
++            JSONArray items = new JSONObject(new String(get(Config.YOUTUBE_FEED), "UTF-8")).getJSONArray("items");
++            List<Recs.Pick> out = new ArrayList<>();
++            for (int i = 0; i < items.length() && out.size() < MAX; i++) {
++                JSONObject o = items.getJSONObject(i);
++                String id = o.getString("id");
++                Recs.Pick p = byId.get(id);
++                if (p == null) {
++                    p = new Recs.Pick();
++                    p.kind = "youtube";
++                    p.id = id.hashCode();
++                    p.title = o.optString("title");
++                    p.app = "youtube";
++                    p.pkg = YOUTUBE;
++                    p.link = "https://www.youtube.com/watch?v=" + id;
++                    p.backdrop = o.optString("thumb");
++                    p.meta = o.optString("channel") + " · " + duration(o.optInt("duration"));
++                    try {
++                        p.thumb = thumbnail(p.backdrop);
++                        p.thumbShader = new BitmapShader(p.thumb, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
++                    } catch (Exception | OutOfMemoryError e) {
++                        AppLog.w("video thumbnail: " + e.getMessage());
++                        continue;
++                    }
++                }
++                out.add(p);
++            }
++            byId.clear();
++            for (Recs.Pick p : out) byId.put(p.link.substring(p.link.indexOf('=') + 1), p);
++            list = Collections.unmodifiableList(out);
++            fetchedAt = System.currentTimeMillis();
++            AppLog.w("videos: " + out.size());
++            main.post(changed);
++        } catch (Exception e) {
++            AppLog.w("videos: " + e.getMessage());
++            fetchedAt = System.currentTimeMillis() - EVERY + 60_000L;   // the LXC may be starting: again in a minute
++        } finally {
++            fetching = false;
++        }
++    }
++
++    private static String duration(int s) {
++        return s >= 3600 ? String.format(Locale.ROOT, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
++                : String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);
++    }
++
++    /** The thumbnail center-cropped to 16:9 (YouTube's hqdefault has black bars) and scaled to the row's size. */
++    private static Bitmap thumbnail(String url) throws Exception {
++        byte[] data = get(url);
++        Bitmap src = BitmapFactory.decodeByteArray(data, 0, data.length);
++        if (src == null) throw new java.io.IOException("unreadable image");
++        int w = src.getWidth(), h = Math.min(src.getHeight(), Math.round(w * 9f / 16));
++        Bitmap crop = Bitmap.createBitmap(src, 0, (src.getHeight() - h) / 2, w, h);
++        Bitmap out = Ui.downscale(crop, THUMB_W, THUMB_H);
++        if (crop != src) src.recycle();
++        if (out != crop) crop.recycle();
++        return out;
++    }
++
++    private static byte[] get(String url) throws Exception {
++        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
++        c.setConnectTimeout(8000);
++        c.setReadTimeout(15000);
++        try (InputStream in = c.getInputStream()) {
++            ByteArrayOutputStream out = new ByteArrayOutputStream();
++            byte[] buf = new byte[16384];
++            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++            return out.toByteArray();
++        } finally {
++            c.disconnect();
++        }
++    }
++}
+diff --git a/build.sh b/build.sh
+index 84ca0b0..4647328 100755
+--- a/build.sh
++++ b/build.sh
+@@ -49,6 +49,10 @@ number() {
+ }
+ if $GENERIC; then
+   LAT=""; LON=""; REGION=""; CURRENCY=""
++elif [ "$(prop latitude '')" = "auto" ]; then
++  LAT=""; LON=""   # latitude=auto: the place comes from the TV's time zone (Place), the rest from config.properties
++  REGION="$(prop tmdb_region US)"
++  CURRENCY="$(prop currency USD)"
+ else
+   LAT="$(number latitude 40.7128)"
+   LON="$(number longitude -74.0060)"
+@@ -81,6 +85,7 @@ final class Config {
+     static final String TEMPERATURE = "$(prop temperature auto)";
+     static final String HIDE_SERVICES = "$(prop hide_services '')";
+     static final String THEME = "$(prop theme auto)";
++    static final String YOUTUBE_FEED = "$(prop youtube_feed '')";
+     static final boolean DISABLE_ASSISTANT = $ASSIST;
+     static final boolean SHOW_CRYPTO = $CRYPTO;
+     static final boolean HIDE_ANIMATION = $ANIMATION;
