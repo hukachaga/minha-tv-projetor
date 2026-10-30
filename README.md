@@ -4,7 +4,7 @@ Uma tela inicial leve e sem anúncios para o Google TV do projetor **Byintek U90
 os 5 apps que eu uso e uma fileira com os vídeos novos dos canais que eu sigo no YouTube, sem Shorts. Essa fileira é
 montada por um serviço que roda numa LXC do meu Proxmox.
 
-Este projeto é uma adaptação do [Free My TV](https://github.com/simbasjungles/free-my-tv) (licença MIT), um launcher de
+Este projeto é uma adaptação do [Free My TV](https://github.com/simbasjungles/free-my-tv), de Simba ([@simbasjungles](https://github.com/simbasjungles)), licença MIT, um launcher de
 código aberto para Google TV.
 
 ## O que tem aqui
@@ -15,6 +15,7 @@ código aberto para Google TV.
 | [`free-my-tv-byintek.patch`](free-my-tv-byintek.patch) | Todas as minhas mudanças no código do Free My TV, prontas para aplicar no original |
 | [`config.byintek.properties`](config.byintek.properties) | As configurações usadas no build: cidade, idioma, tema, endereço do feed |
 | [`ytfeed/`](ytfeed/) | O serviço do feed do YouTube que roda na LXC: script, instalador e guia de login |
+| [`LICENSE-FREE-MY-TV`](LICENSE-FREE-MY-TV) | A licença MIT do Free My TV original, que vale para o patch e o APK |
 
 ## O cenário
 
@@ -147,5 +148,15 @@ só o clone do projeto original, e as mudanças estão no patch.
 
 ## Créditos
 
-- [Free My TV](https://github.com/simbasjungles/free-my-tv), licença MIT, por Free My TV contributors.
-- Adaptação para o Byintek U90 Max e feed do YouTube feitos com [Claude Code](https://claude.com/claude-code).
+Este projeto só existe por causa do **[Free My TV](https://github.com/simbasjungles/free-my-tv)** ([freemytv.io](https://freemytv.io)),
+criado e mantido por **Simba ([@simbasjungles](https://github.com/simbasjungles))**. A tela inicial, o modo
+*Original*, a proteção dos apps do sistema, o clima, as fotos e quase todo o código do APK são trabalho dele e dos
+colaboradores do projeto, entre eles Vinícius DS Andrade, Advait Thakur, Leonardo Feitosa e ismaelmelgar. A lista
+completa está em [contributors](https://github.com/simbasjungles/free-my-tv/graphs/contributors).
+
+O Free My TV é distribuído sob a **licença MIT** (Copyright (c) 2026 Free My TV contributors). O texto completo está em
+[`LICENSE-FREE-MY-TV`](LICENSE-FREE-MY-TV) e vale também para o patch e o APK deste repositório.
+
+Minha parte: a adaptação para o Byintek U90 Max (prateleira, visual, fileira de vídeos) e o serviço `ytfeed`, feitos
+com a ajuda do [Claude Code](https://claude.com/claude-code). Se quiser um launcher assim para a sua TV, comece pelo
+[repositório original](https://github.com/simbasjungles/free-my-tv).
